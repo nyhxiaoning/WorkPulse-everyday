@@ -159,9 +159,9 @@ function getProviderBaseUrlPlaceholder(provider: AIProvider): string {
     case 'anthropic':
       return 'https://api.anthropic.com'
     case 'kimi':
-      return 'https://api.kimi.ai'
+      return 'https://api.moonshot.cn'
     case 'deepseek':
-      return 'https://api.deepseek.ai'
+      return 'https://api.deepseek.com'
     default:
       return ''
   }
@@ -174,9 +174,20 @@ function getProviderModelPlaceholder(provider: AIProvider): string {
     case 'anthropic':
       return 'claude-sonnet-4-20250514'
     case 'kimi':
-      return 'gpt-4o-mini'
+      return 'moonshot-v1-8k'
     case 'deepseek':
-      return 'gpt-4o-mini'
+      return 'deepseek-chat'
+    default:
+      return ''
+  }
+}
+
+function getProviderDefaultBaseUrl(provider: AIProvider): string {
+  switch (provider) {
+    case 'deepseek':
+      return 'https://api.deepseek.com'
+    case 'kimi':
+      return 'https://api.moonshot.cn'
     default:
       return ''
   }
@@ -333,6 +344,13 @@ function SettingsPage({ onBack }: Props): JSX.Element {
 
   const handleProviderChange = async (value: AIProvider): Promise<void> => {
     setProvider(value)
+    // Auto-set Base URL for providers that require it
+    const defaultBaseUrl = getProviderDefaultBaseUrl(value)
+    if (defaultBaseUrl) {
+      setBaseUrl(defaultBaseUrl)
+    }
+    // Reset available models when provider changes
+    setAvailableModels([])
   }
 
   const handleBaseUrlBlur = async (): Promise<void> => {

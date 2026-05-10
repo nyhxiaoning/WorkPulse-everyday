@@ -105,6 +105,12 @@ export async function generateReport(
   if (provider === 'anthropic') {
     return callAnthropic(apiKey, baseUrl, model, messages)
   }
+  if (provider === 'deepseek') {
+    return callDeepSeek(apiKey, model, messages)
+  }
+  if (provider === 'kimi') {
+    return callKimi(apiKey, model, messages)
+  }
   return callOpenAI(apiKey, baseUrl, model, messages)
 }
 
@@ -155,6 +161,68 @@ async function callOpenAI(
     },
     body: JSON.stringify({
       model: model || 'gpt-4o-mini',
+      messages,
+      temperature: 0.7,
+      max_tokens: 2000
+    })
+  })
+
+  if (!response.ok) {
+    const error = await response.text()
+    throw new Error(`${tMain('openAiError')}: ${response.status} - ${error}`)
+  }
+
+  const data = await response.json()
+  return data.choices[0]?.message?.content || tMain('noGeneratedContent')
+}
+
+async function callDeepSeek(
+  apiKey: string,
+  model: string,
+  messages: Message[]
+): Promise<string> {
+  // DeepSeek uses the format: https://api.deepseek.com/chat/completions (no /v1)
+  const url = 'https://api.deepseek.com/chat/completions'
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${apiKey}`
+    },
+    body: JSON.stringify({
+      model: model || 'deepseek-chat',
+      messages,
+      temperature: 0.7,
+      max_tokens: 2000
+    })
+  })
+
+  if (!response.ok) {
+    const error = await response.text()
+    throw new Error(`${tMain('openAiError')}: ${response.status} - ${error}`)
+  }
+
+  const data = await response.json()
+  return data.choices[0]?.message?.content || tMain('noGeneratedContent')
+}
+
+async function callKimi(
+  apiKey: string,
+  model: string,
+  messages: Message[]
+): Promise<string> {
+  // Kimi (Moonshot) API endpoint
+  const url = 'https://api.moonshot.cn/v1/chat/completions'
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${apiKey}`
+    },
+    body: JSON.stringify({
+      model: model || 'moonshot-v1-8k',
       messages,
       temperature: 0.7,
       max_tokens: 2000
@@ -221,6 +289,12 @@ export async function testApiConnection(
   if (provider === 'anthropic') {
     return callAnthropic(apiKey, baseUrl, model, testMessages)
   }
+  if (provider === 'deepseek') {
+    return callDeepSeek(apiKey, model, testMessages)
+  }
+  if (provider === 'kimi') {
+    return callKimi(apiKey, model, testMessages)
+  }
   return callOpenAI(apiKey, baseUrl, model, testMessages)
 }
 
@@ -233,6 +307,16 @@ export async function getAvailableModels(
     throw new Error(tMain('unsupportedModelList'))
   }
 
+  // DeepSeek and Kimi have hardcoded model lists since they may not support /v1/models endpoint
+  if (provider === 'deepseek') {
+    return ['deepseek-chat', 'deepseek-coder']
+  }
+
+  if (provider === 'kimi') {
+    return ['moonshot-v1-8k', 'moonshot-v1-32k', 'moonshot-v1-128k']
+  }
+
+  // For OpenAI and custom OpenAI-compatible providers, try to fetch from /v1/models endpoint
   const url = baseUrl
     ? `${baseUrl.replace(/\/+$/, '')}/v1/models`
     : 'https://api.openai.com/v1/models'
