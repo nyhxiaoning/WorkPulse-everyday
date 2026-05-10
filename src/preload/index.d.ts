@@ -98,7 +98,10 @@ interface API {
     get: (key: string) => Promise<string | null>
     set: (key: string, value: string) => Promise<void>
     delete: (key: string) => Promise<void>
+    test: (apiKey: string, provider: string, baseUrl: string, model: string) => Promise<string>
+    getModels: (apiKey: string, provider: string, baseUrl: string) => Promise<string[]>
   }
+  testSettings: (apiKey: string, provider: string, baseUrl: string, model: string) => Promise<string>
   shortcut: {
     update: (key: string, value: string) => Promise<boolean>
   }

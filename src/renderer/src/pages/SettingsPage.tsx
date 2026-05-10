@@ -150,6 +150,38 @@ function getDefaultReportTemplate(language: ResolvedLanguage): string {
   return language === 'zh' ? DEFAULT_REPORT_TEMPLATE : DEFAULT_REPORT_TEMPLATE_EN
 }
 
+type AIProvider = 'openai' | 'anthropic' | 'kimi' | 'deepseek'
+
+function getProviderBaseUrlPlaceholder(provider: AIProvider): string {
+  switch (provider) {
+    case 'openai':
+      return 'https://api.openai.com'
+    case 'anthropic':
+      return 'https://api.anthropic.com'
+    case 'kimi':
+      return 'https://api.kimi.ai'
+    case 'deepseek':
+      return 'https://api.deepseek.ai'
+    default:
+      return ''
+  }
+}
+
+function getProviderModelPlaceholder(provider: AIProvider): string {
+  switch (provider) {
+    case 'openai':
+      return 'gpt-4o-mini'
+    case 'anthropic':
+      return 'claude-sonnet-4-20250514'
+    case 'kimi':
+      return 'gpt-4o-mini'
+    case 'deepseek':
+      return 'gpt-4o-mini'
+    default:
+      return ''
+  }
+}
+
 function SettingsPage({ onBack }: Props): JSX.Element {
   const isMac = navigator.userAgent.includes('Mac')
   const modifierLabel = isMac ? 'Cmd' : 'Ctrl'
@@ -160,9 +192,12 @@ function SettingsPage({ onBack }: Props): JSX.Element {
   const [hasKey, setHasKey] = useState(false)
   const [showKey, setShowKey] = useState(false)
   const [editing, setEditing] = useState(false)
-  const [provider, setProvider] = useState('openai')
+  const [provider, setProvider] = useState<AIProvider>('openai')
   const [baseUrl, setBaseUrl] = useState('')
   const [model, setModel] = useState('')
+  const [availableModels, setAvailableModels] = useState<string[]>([])
+  const [isLoadingModels, setIsLoadingModels] = useState(false)
+  const [isTestingApi, setIsTestingApi] = useState(false)
   const [reportLanguage, setReportLanguage] = useState(resolvedLanguage === 'zh' ? '中文' : 'English')
   const [style, setStyle] = useState(t('settings.styleConcise'))
   const [systemPrompt, setSystemPrompt] = useState(getDefaultSystemPrompt(resolvedLanguage))
@@ -225,7 +260,7 @@ function SettingsPage({ onBack }: Props): JSX.Element {
       setHasKey(true)
     }
     const p = await window.api.settings.get('ai_provider')
-    if (p) setProvider(p)
+    if (p) setProvider(p as AIProvider)
     const b = await window.api.settings.get('ai_base_url')
     if (b) setBaseUrl(b)
     const m = await window.api.settings.get('ai_model')
@@ -296,17 +331,79 @@ function SettingsPage({ onBack }: Props): JSX.Element {
     }
   }
 
-  const handleProviderChange = async (value: string): Promise<void> => {
+  const handleProviderChange = async (value: AIProvider): Promise<void> => {
     setProvider(value)
-    await window.api.settings.set('ai_provider', value)
   }
 
   const handleBaseUrlBlur = async (): Promise<void> => {
-    await saveSetting('ai_base_url', baseUrl)
+    // Base URL is saved only after a successful API test.
   }
 
   const handleModelBlur = async (): Promise<void> => {
-    await saveSetting('ai_model', model)
+    // Model name is saved only after a successful API test.
+  }
+
+  const fetchModels = async (showToast = true): Promise<string[]> => {
+    if (!apiKey.trim() && !hasKey) {
+      if (showToast) toast.error(t('settings.testConnectionNoKey'))
+      return []
+    }
+
+    setIsLoadingModels(true)
+    try {
+      const key = apiKey.trim()
+      if (typeof window.api.settings.getModels !== 'function') {
+        throw new Error(t('settings.fetchModelsMissing'))
+      }
+      const models = await window.api.settings.getModels(key, provider, baseUrl)
+      setAvailableModels(models)
+      if (!model && models.length > 0) {
+        setModel(models[0])
+      }
+      if (showToast) {
+        toast.success(t('settings.fetchModelsSuccess', { count: models.length }))
+      }
+      return models
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      if (showToast) {
+        toast.error(t('settings.fetchModelsFailed', { message }))
+      }
+      return []
+    } finally {
+      setIsLoadingModels(false)
+    }
+  }
+
+  const handleFetchModels = async (): Promise<void> => {
+    await fetchModels(true)
+  }
+
+  const handleTestConnection = async (): Promise<void> => {
+    if (!apiKey.trim() && !hasKey) {
+      toast.error(t('settings.testConnectionNoKey'))
+      return
+    }
+
+    setIsTestingApi(true)
+    try {
+      const key = apiKey.trim()
+      const testFn = window.api.settings.test ?? window.api.testSettings
+      if (typeof testFn !== 'function') {
+        throw new Error(t('settings.testConnectionMissing'))
+      }
+      await testFn(key, provider, baseUrl, model)
+      await window.api.settings.set('ai_provider', provider)
+      await saveSetting('ai_base_url', baseUrl)
+      await saveSetting('ai_model', model)
+      await fetchModels(false)
+      toast.success(t('settings.testConnectionSuccess'))
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      toast.error(t('settings.testConnectionFailed', { message }))
+    } finally {
+      setIsTestingApi(false)
+    }
   }
 
   const handleLanguageChange = async (value: string): Promise<void> => {
@@ -478,11 +575,13 @@ function SettingsPage({ onBack }: Props): JSX.Element {
               <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1">{t('settings.aiProvider')}</label>
               <select
                 value={provider}
-                onChange={(e) => handleProviderChange(e.target.value)}
+                onChange={(e) => handleProviderChange(e.target.value as AIProvider)}
                 className="px-3 py-2 border border-zinc-300 dark:border-zinc-600 rounded-md text-sm outline-none focus:border-zinc-500 focus:ring-2 focus:ring-zinc-200 dark:focus:ring-zinc-700 bg-white dark:bg-zinc-800 dark:text-zinc-100"
               >
                 <option value="openai">OpenAI</option>
                 <option value="anthropic">Anthropic (Claude)</option>
+                <option value="kimi">Kimi</option>
+                <option value="deepseek">DeepSeek</option>
               </select>
             </div>
 
@@ -497,7 +596,7 @@ function SettingsPage({ onBack }: Props): JSX.Element {
                 value={baseUrl}
                 onChange={(e) => setBaseUrl(e.target.value)}
                 onBlur={handleBaseUrlBlur}
-                placeholder={provider === 'openai' ? 'https://api.openai.com' : 'https://api.anthropic.com'}
+                placeholder={getProviderBaseUrlPlaceholder(provider)}
                 className="w-full px-3 py-2 border border-zinc-300 dark:border-zinc-600 rounded-md text-sm outline-none focus:border-zinc-500 focus:ring-2 focus:ring-zinc-200 dark:focus:ring-zinc-700 bg-white dark:bg-zinc-800 dark:text-zinc-100 font-mono"
               />
             </div>
@@ -512,9 +611,49 @@ function SettingsPage({ onBack }: Props): JSX.Element {
                 value={model}
                 onChange={(e) => setModel(e.target.value)}
                 onBlur={handleModelBlur}
-                placeholder={provider === 'openai' ? 'gpt-4o-mini' : 'claude-sonnet-4-20250514'}
+                placeholder={getProviderModelPlaceholder(provider)}
                 className="w-full px-3 py-2 border border-zinc-300 dark:border-zinc-600 rounded-md text-sm outline-none focus:border-zinc-500 focus:ring-2 focus:ring-zinc-200 dark:focus:ring-zinc-700 bg-white dark:bg-zinc-800 dark:text-zinc-100 font-mono"
               />
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleFetchModels}
+                  disabled={isLoadingModels}
+                  className="px-4 py-2 text-sm rounded-md border border-zinc-300 dark:border-zinc-600 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {isLoadingModels ? t('settings.fetchingModels') : t('settings.fetchModels')}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleTestConnection}
+                  disabled={isTestingApi}
+                  className="px-4 py-2 text-sm rounded-md bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 hover:bg-zinc-800 dark:hover:bg-zinc-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {isTestingApi ? t('settings.testingConnection') : t('settings.testConnection')}
+                </button>
+                <span className="text-xs text-zinc-500 dark:text-zinc-400">
+                  {t('settings.fetchModelsHelp')}
+                </span>
+              </div>
+              {availableModels.length > 0 && (
+                <div className="mt-3">
+                  <label className="block text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-1">
+                    {t('settings.availableModelsLabel')}
+                  </label>
+                  <select
+                    value={model}
+                    onChange={(e) => setModel(e.target.value)}
+                    className="w-full px-3 py-2 border border-zinc-300 dark:border-zinc-600 rounded-md text-sm outline-none focus:border-zinc-500 focus:ring-2 focus:ring-zinc-200 dark:focus:ring-zinc-700 bg-white dark:bg-zinc-800 dark:text-zinc-100"
+                  >
+                    {availableModels.map((item) => (
+                      <option key={item} value={item}>{item}</option>
+                    ))}
+                  </select>
+                  <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">
+                    {t('settings.availableModelsInfo', { count: availableModels.length })}
+                  </p>
+                </div>
+              )}
             </div>
           </section>
 

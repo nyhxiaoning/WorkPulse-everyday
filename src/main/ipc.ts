@@ -24,7 +24,7 @@ import {
   reorderTasks,
   type Task
 } from './db'
-import { generateReport } from './ai'
+import { generateReport, testApiConnection, getAvailableModels } from './ai'
 import { deleteStoredApiKey, getStoredApiKey, setStoredApiKey } from './secureSettings'
 import { tMain } from './i18n'
 
@@ -163,6 +163,20 @@ export function registerIpcHandlers(): void {
     }
     deleteSetting(key)
   })
+
+  ipcMain.handle(
+    'settings:test',
+    async (_event, apiKey: string, provider: string, baseUrl: string, model: string) => {
+      return testApiConnection(apiKey, provider as 'openai' | 'anthropic' | 'kimi' | 'deepseek', baseUrl, model)
+    }
+  )
+
+  ipcMain.handle(
+    'settings:getModels',
+    async (_event, apiKey: string, provider: string, baseUrl: string) => {
+      return getAvailableModels(apiKey, provider as 'openai' | 'anthropic' | 'kimi' | 'deepseek', baseUrl)
+    }
+  )
 
   // --- Export ---
 

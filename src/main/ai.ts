@@ -2,6 +2,8 @@ import { getSetting } from './db'
 import { getStoredApiKey } from './secureSettings'
 import { getResolvedLanguage, tMain } from './i18n'
 
+type AIProvider = 'openai' | 'anthropic' | 'kimi' | 'deepseek'
+
 interface Message {
   role: 'system' | 'user' | 'assistant'
   content: string
@@ -71,7 +73,7 @@ export async function generateReport(
   }
 
   const resolvedLanguage = getResolvedLanguage()
-  const provider = getSetting('ai_provider') || 'openai'
+  const provider = (getSetting('ai_provider') || 'openai') as 'openai' | 'anthropic' | 'kimi' | 'deepseek'
   const baseUrl = getSetting('ai_base_url') || ''
   const model = getSetting('ai_model') || ''
   const language = getSetting('report_language') || (resolvedLanguage === 'zh' ? '中文' : 'English')
@@ -142,7 +144,7 @@ async function callOpenAI(
   messages: Message[]
 ): Promise<string> {
   const url = baseUrl
-    ? `${baseUrl.replace(/\/+$/, '')}/chat/completions`
+    ? `${baseUrl.replace(/\/+$/, '')}/v1/chat/completions`
     : 'https://api.openai.com/v1/chat/completions'
 
   const response = await fetch(url, {
@@ -203,6 +205,62 @@ async function callAnthropic(
 
   const data = await response.json()
   return data.content[0]?.text || tMain('noGeneratedContent')
+}
+
+export async function testApiConnection(
+  apiKey: string,
+  provider: AIProvider,
+  baseUrl: string,
+  model: string
+): Promise<string> {
+  const testMessages: Message[] = [
+    { role: 'system', content: 'You are a helpful assistant.' },
+    { role: 'user', content: 'Please reply with a short confirmation message.' }
+  ]
+
+  if (provider === 'anthropic') {
+    return callAnthropic(apiKey, baseUrl, model, testMessages)
+  }
+  return callOpenAI(apiKey, baseUrl, model, testMessages)
+}
+
+export async function getAvailableModels(
+  apiKey: string,
+  provider: AIProvider,
+  baseUrl: string
+): Promise<string[]> {
+  if (provider === 'anthropic') {
+    throw new Error(tMain('unsupportedModelList'))
+  }
+
+  const url = baseUrl
+    ? `${baseUrl.replace(/\/+$/, '')}/v1/models`
+    : 'https://api.openai.com/v1/models'
+
+  const response = await fetch(url, {
+    method: 'GET',
+    headers: {
+      Authorization: `Bearer ${apiKey}`
+    }
+  })
+
+  if (!response.ok) {
+    const error = await response.text()
+    throw new Error(`${tMain('openAiError')}: ${response.status} - ${error}`)
+  }
+
+  const data = await response.json()
+  const items = Array.isArray(data.data)
+    ? data.data
+    : Array.isArray(data.models)
+      ? data.models
+      : []
+
+  const modelIds = items
+    .map((item: any) => (typeof item === 'string' ? item : item?.id))
+    .filter((id: unknown): id is string => typeof id === 'string' && Boolean(id))
+
+  return Array.from(new Set(modelIds))
 }
 
 export { DEFAULT_SYSTEM_PROMPT, DEFAULT_REPORT_TEMPLATE, DEFAULT_SYSTEM_PROMPT_EN, DEFAULT_REPORT_TEMPLATE_EN }

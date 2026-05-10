@@ -68,8 +68,14 @@ const api = {
   settings: {
     get: (key: string) => ipcRenderer.invoke('settings:get', key),
     set: (key: string, value: string) => ipcRenderer.invoke('settings:set', key, value),
-    delete: (key: string) => ipcRenderer.invoke('settings:delete', key)
+    delete: (key: string) => ipcRenderer.invoke('settings:delete', key),
+    test: (apiKey: string, provider: string, baseUrl: string, model: string) =>
+      ipcRenderer.invoke('settings:test', apiKey, provider, baseUrl, model),
+    getModels: (apiKey: string, provider: string, baseUrl: string) =>
+      ipcRenderer.invoke('settings:getModels', apiKey, provider, baseUrl)
   },
+  testSettings: (apiKey: string, provider: string, baseUrl: string, model: string) =>
+    ipcRenderer.invoke('settings:test', apiKey, provider, baseUrl, model),
   shortcut: {
     update: (key: string, value: string) => ipcRenderer.invoke('shortcut:update', key, value)
   },
