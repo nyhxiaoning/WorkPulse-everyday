@@ -1,5 +1,15 @@
 # WorkPulse (拾光)
 
+## 打包场景问题：electron网络问题
+### 方法1: 设置缓存
+npm config set electron_mirror https://npmmirror.com/mirrors/electron/
+
+如果设置缓存不成功
+
+### 方法2: 使用缓存
+将electron放入缓存，同时256的解密文件页放在：https://github.com/electron/electron/releases/download/v31.7.7/SHASUMS256.txt
+这样才能保证打包和使用缓存正确。
+
 [English](./README.md) | [中文](./README.zh-CN.md)
 
 A lightweight desktop app that captures your daily work in seconds — log what you did, track tasks on a kanban board, and generate AI-powered reports.
